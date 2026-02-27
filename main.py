@@ -46,7 +46,7 @@ class Criatura:
         dano_final = valor
         msg = ""
         
-        # Puxa a RD específica do tipo de ataque (se não existir, é 0)
+        # Puxa a RD específica do tipo de ataque na grade (se não existir, é 0)
         rd_efetiva = int(self.rds.get(tipo, 0))
 
         # 1. FRAQUEZA ELEMENTAL (Dano dobra e ignora RD)
@@ -55,21 +55,27 @@ class Criatura:
             rd_efetiva = 0 
             msg = "⚡ FRAQUEZA ELEMENTAL! (RD Ignorada)"
             
-        # 2. RESISTÊNCIA ELEMENTAL (Dano cai pela metade)
-        elif tipo == self.elemento:
-            dano_final = valor // 2
-            msg = "🛡️ RESISTÊNCIA ELEMENTAL."
+        # A Regra Automática de "Resistência Elemental" (dividir por 2) foi removida.
+        # Agora a resistência é 100% ditada pela Grade de RDs.
 
-        # 3. STATUS VULNERÁVEL (Corta a RD pela metade, se ainda houver RD)
+        # 2. STATUS VULNERÁVEL (Corta a RD pela metade, se ainda houver RD)
         if status_vulneravel:
             if rd_efetiva > 0:
                 rd_efetiva = rd_efetiva // 2
             msg += " | ⚠️ ALVO VULNERÁVEL"
 
-        # 4. APLICAÇÃO DA REDUÇÃO DE DANO (RD Específica)
+        # 3. APLICAÇÃO DA REDUÇÃO DE DANO (RD Específica da Grade)
         dano_final = max(0, dano_final - rd_efetiva)
 
         self.pv_atual = max(0, self.pv_atual - dano_final)
+        
+        # Ajusta a mensagem de log se o ataque não for fraqueza
+        if not msg:
+            if rd_efetiva > 0:
+                msg = f"(RD {rd_efetiva} aplicada)"
+            else:
+                msg = "(Dano limpo)"
+                
         return dano_final, msg
 
 
@@ -176,7 +182,6 @@ class OrdoApp(ctk.CTk):
         for i, tipo in enumerate(tipos_dano):
             row = i // 2
             col = i % 2
-            # Usa abreviações se o nome for muito longo
             nome_display = tipo[:6] + "." if len(tipo) > 9 else tipo
             
             ent = ctk.CTkEntry(
@@ -333,14 +338,12 @@ class OrdoApp(ctk.CTk):
         if nome in self.bestiario:
             d = self.bestiario[nome]
             
-            # Pega as RDs do JSON (se for um save antigo, garante que não quebre)
             rds_salvas = d.get('rds', {})
             
             self.inimigo_atual = Criatura(
                 nome, d['pv'], d['elemento'], rds_salvas
             )
 
-            # Atualiza visualmente os campos de RD para o mestre ver
             for tipo, ent in self.entradas_rd.items():
                 ent.delete(0, 'end')
                 valor_rd = rds_salvas.get(tipo, 0)
@@ -424,7 +427,6 @@ class OrdoApp(ctk.CTk):
         p = self.ent_pv.get()
 
         if n and p.isdigit():
-            # Coleta todos os valores da grid de RDs
             rds_atuais = {}
             for tipo, ent in self.entradas_rd.items():
                 val = ent.get()
