@@ -27,30 +27,46 @@ FONT_TEXT = ("Cinzel", 14)
 # CLASSE CRIATURA
 # =========================
 class Criatura:
-    def __init__(self, nome, pv_max, elemento, rd=0):
+    def __init__(self, nome, pv_max, elemento, rds=None):
         self.nome = nome
         self.pv_max = int(pv_max)
         self.pv_atual = int(pv_max)
         self.elemento = elemento
-        self.rd = int(rd)
+        self.rds = rds if rds else {}
 
     def calcular_dano(self, valor, tipo, status_vulneravel=False):
-        fraquezas = {"Sangue": "Conhecimento",
-                     "Morte": "Energia",
-                     "Energia": "Sangue",
-                     "Conhecimento": "Morte"}
+        # Mapeamento do ciclo de elementos: Quem sofre < Para quem (A Fraqueza)
+        fraquezas = {
+            "Sangue": "Morte",
+            "Morte": "Energia",
+            "Energia": "Conhecimento",
+            "Conhecimento": "Sangue"
+        }
 
         dano_final = valor
         msg = ""
+        
+        # Puxa a RD específica do tipo de ataque (se não existir, é 0)
+        rd_efetiva = int(self.rds.get(tipo, 0))
 
+        # 1. FRAQUEZA ELEMENTAL (Dano dobra e ignora RD)
         if tipo == fraquezas.get(self.elemento):
             dano_final = valor * 2
-            msg = "⚡ FRAQUEZA ELEMENTAL!"
+            rd_efetiva = 0 
+            msg = "⚡ FRAQUEZA ELEMENTAL! (RD Ignorada)"
+            
+        # 2. RESISTÊNCIA ELEMENTAL (Dano cai pela metade)
         elif tipo == self.elemento:
             dano_final = valor // 2
             msg = "🛡️ RESISTÊNCIA ELEMENTAL."
 
-        rd_efetiva = self.rd // 2 if status_vulneravel else self.rd
+        # 3. STATUS VULNERÁVEL (Corta a RD pela metade, se ainda houver RD)
+        if status_vulneravel:
+            if rd_efetiva > 0:
+                rd_efetiva = rd_efetiva // 2
+            msg += " | ⚠️ ALVO VULNERÁVEL"
+
+        # 4. APLICAÇÃO DA REDUÇÃO DE DANO (RD Específica)
         dano_final = max(0, dano_final - rd_efetiva)
 
         self.pv_atual = max(0, self.pv_atual - dano_final)
@@ -122,32 +138,57 @@ class OrdoApp(ctk.CTk):
             border_width=2,
             corner_radius=15
         )
-        self.sidebar.place(relx=0.02, rely=0.03,
-                           relwidth=0.23, relheight=0.94)
+        self.sidebar.place(relx=0.02, rely=0.03, relwidth=0.24, relheight=0.94)
 
         ctk.CTkLabel(
             self.sidebar,
             text="☣ BESTIÁRIO",
             font=FONT_SUB,
             text_color=COLOR_SANGUE
-        ).pack(pady=20)
+        ).pack(pady=15)
 
         self.combo_selecao = ctk.CTkComboBox(
             self.sidebar,
             values=list(self.bestiario.keys()) if self.bestiario else ["Vazio"],
             command=self.carregar_monstro
         )
-        self.combo_selecao.pack(pady=10, padx=15, fill="x")
+        self.combo_selecao.pack(pady=5, padx=15, fill="x")
 
         self.ent_nome = self.criar_input(self.sidebar, "Nome")
         self.ent_pv = self.criar_input(self.sidebar, "PV Máximo")
-        self.ent_rd = self.criar_input(self.sidebar, "RD Base")
-
+        
+        # Combo de Elemento Base
         self.combo_elem = ctk.CTkComboBox(
             self.sidebar,
             values=["Sangue", "Morte", "Energia", "Conhecimento", "Físico"]
         )
-        self.combo_elem.pack(pady=10, padx=15, fill="x")
+        self.combo_elem.pack(pady=5, padx=15, fill="x")
+
+        # --- GRID DE REDUÇÃO DE DANO (RD) ---
+        ctk.CTkLabel(self.sidebar, text="REDUÇÕES DE DANO (RD)", font=FONT_TEXT, text_color=COLOR_GOLD).pack(pady=(10, 0))
+        
+        self.frame_rds = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        self.frame_rds.pack(pady=5, padx=15, fill="x")
+
+        tipos_dano = ["Impacto", "Corte", "Perfuração", "Balístico", "Sangue", "Morte", "Conhecimento", "Energia"]
+        self.entradas_rd = {}
+
+        for i, tipo in enumerate(tipos_dano):
+            row = i // 2
+            col = i % 2
+            # Usa abreviações se o nome for muito longo
+            nome_display = tipo[:6] + "." if len(tipo) > 9 else tipo
+            
+            ent = ctk.CTkEntry(
+                self.frame_rds, 
+                placeholder_text=f"{nome_display}", 
+                width=110,
+                fg_color=COLOR_ENTRY, 
+                border_color="#333", 
+                corner_radius=5
+            )
+            ent.grid(row=row, column=col, padx=5, pady=5)
+            self.entradas_rd[tipo] = ent
 
         self.criar_botao(
             self.sidebar,
@@ -164,8 +205,7 @@ class OrdoApp(ctk.CTk):
             border_width=1,
             corner_radius=20
         )
-        self.main.place(relx=0.28, rely=0.03,
-                        relwidth=0.44, relheight=0.94)
+        self.main.place(relx=0.28, rely=0.03, relwidth=0.44, relheight=0.94)
 
         self.lbl_nome = ctk.CTkLabel(
             self.main,
@@ -211,19 +251,18 @@ class OrdoApp(ctk.CTk):
             text_color="#FF4444",
             font=FONT_TEXT
         )
-        self.check_vulneravel.grid(row=0, column=0, padx=20, pady=20)
+        self.check_vulneravel.grid(row=0, column=0, padx=15, pady=20)
 
         self.ent_dano = ctk.CTkEntry(
             self.action_frame,
-            placeholder_text="DANO BRUTO",
-            width=140
+            placeholder_text="VALOR",
+            width=90
         )
         self.ent_dano.grid(row=0, column=1, padx=10)
 
         self.combo_tipo = ctk.CTkComboBox(
             self.action_frame,
-            values=["Físico", "Sangue", "Morte",
-                    "Energia", "Conhecimento"],
+            values=["Impacto", "Corte", "Perfuração", "Balístico", "Sangue", "Morte", "Energia", "Conhecimento"],
             width=150
         )
         self.combo_tipo.grid(row=0, column=2, padx=10)
@@ -255,8 +294,7 @@ class OrdoApp(ctk.CTk):
             border_width=2,
             corner_radius=15
         )
-        self.ini_frame.place(relx=0.74, rely=0.03,
-                             relwidth=0.24, relheight=0.94)
+        self.ini_frame.place(relx=0.74, rely=0.03, relwidth=0.24, relheight=0.94)
 
         ctk.CTkLabel(
             self.ini_frame,
@@ -288,16 +326,26 @@ class OrdoApp(ctk.CTk):
             text_color=COLOR_GOLD,
             font=FONT_TEXT
         )
-        self.txt_ini.pack(pady=15, padx=15,
-                          fill="both", expand=True)
+        self.txt_ini.pack(pady=15, padx=15, fill="both", expand=True)
 
     # =========================
     def carregar_monstro(self, nome):
         if nome in self.bestiario:
             d = self.bestiario[nome]
+            
+            # Pega as RDs do JSON (se for um save antigo, garante que não quebre)
+            rds_salvas = d.get('rds', {})
+            
             self.inimigo_atual = Criatura(
-                nome, d['pv'], d['elemento'], d['rd']
+                nome, d['pv'], d['elemento'], rds_salvas
             )
+
+            # Atualiza visualmente os campos de RD para o mestre ver
+            for tipo, ent in self.entradas_rd.items():
+                ent.delete(0, 'end')
+                valor_rd = rds_salvas.get(tipo, 0)
+                if valor_rd > 0:
+                    ent.insert(0, str(valor_rd))
 
             cores = {
                 "Sangue": COLOR_SANGUE,
@@ -367,7 +415,7 @@ class OrdoApp(ctk.CTk):
 
             self.log.see("end")
 
-        except:
+        except ValueError:
             pass
 
     # =========================
@@ -376,9 +424,15 @@ class OrdoApp(ctk.CTk):
         p = self.ent_pv.get()
 
         if n and p.isdigit():
+            # Coleta todos os valores da grid de RDs
+            rds_atuais = {}
+            for tipo, ent in self.entradas_rd.items():
+                val = ent.get()
+                rds_atuais[tipo] = int(val) if val.isdigit() else 0
+
             self.bestiario[n] = {
                 "pv": p,
-                "rd": self.ent_rd.get() or 0,
+                "rds": rds_atuais,
                 "elemento": self.combo_elem.get()
             }
 
